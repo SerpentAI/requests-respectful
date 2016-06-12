@@ -5,17 +5,28 @@ import uuid
 import inspect
 import time
 
+import requests
+
 
 class RespectfulRequester:
 
     def __init__(self):
         self.redis = redis
 
+    def __getattr__(self, attr):
+        if attr in ["delete", "get", "head", "options", "patch", "post", "put"]:
+            return getattr(self, "_requests_proxy_%s" % attr)
+        else:
+            raise AttributeError()
+
     @property
     def redis_prefix(self):
         return "RespectfulRequester"
 
     def request(self, request_func, realm, wait=False):
+        if realm not in self.fetch_registered_realms():
+            raise RequestsRespectfulError("Realm '%s' hasn't been registered" % realm)
+
         if wait:
             while True:
                 try:
@@ -52,6 +63,9 @@ class RespectfulRequester:
     def unregister_realm(self, realm):
         self.redis.delete(self._realm_redis_key(realm))
         self.redis.srem("%s:REALMS" % self.redis_prefix, realm)
+
+        request_keys = self.redis.keys("%s:REQUEST:%s:*" % (self.redis_prefix, realm))
+        [self.redis.delete(k) for k in request_keys]
 
         return True
 
@@ -140,11 +154,43 @@ class RespectfulRequester:
     def _can_perform_request(self, realm):
         return self._requests_in_timespan(realm) < (self.realm_max_requests(realm) - config["safety_threshold"])
 
+    # Requests proxy
+    def _requests_proxy(self, method, *args, **kwargs):
+        realm = kwargs.pop("realm", None)
+        wait = kwargs.pop("wait", False)
+
+        if realm is None:
+            raise RequestsRespectfulError("'realm' is a required kwarg")
+
+        return self.request(lambda: getattr(requests, method)(*args, **kwargs), realm, wait=wait)
+
+    def _requests_proxy_delete(self, *args, **kwargs):
+        return self._requests_proxy("delete", *args, **kwargs)
+
+    def _requests_proxy_get(self, *args, **kwargs):
+        return self._requests_proxy("get", *args, **kwargs)
+
+    def _requests_proxy_head(self, *args, **kwargs):
+        return self._requests_proxy("head", *args, **kwargs)
+
+    def _requests_proxy_options(self, *args, **kwargs):
+        return self._requests_proxy("options", *args, **kwargs)
+
+    def _requests_proxy_patch(self, *args, **kwargs):
+        return self._requests_proxy("patch", *args, **kwargs)
+
+    def _requests_proxy_post(self, *args, **kwargs):
+        return self._requests_proxy("post", *args, **kwargs)
+
+    def _requests_proxy_put(self, *args, **kwargs):
+        return self._requests_proxy("put", *args, **kwargs)
+
     @staticmethod
     def _validate_request_func(request_func):
         request_func_string = inspect.getsource(request_func)
+        post_lambda_string = request_func_string.split(":")[1].strip()
 
-        if not request_func_string.split(":")[1].strip().startswith(config["requests_module_name"]):
+        if not post_lambda_string.startswith(config["requests_module_name"]) and not post_lambda_string.startswith("getattr(requests"):
             raise RequestsRespectfulError("The request lambda can only contain a requests function call")
 
     @staticmethod

@@ -5,13 +5,17 @@ from requests_respectful import RespectfulRequester
 from requests_respectful import RequestsRespectfulError, RequestsRespectfulConfigError, RequestsRespectfulRateLimitedError
 
 import redis
+
 import requests
+import requests as r
 
 
 # Tests
 def test_setup():
     rr = RespectfulRequester()
     rr.unregister_realm("TEST123")
+
+    RespectfulRequester.configure_default()
 
 
 def test_the_class_should_accept_configuration_values():
@@ -164,10 +168,15 @@ def test_the_instance_should_be_able_to_unregister_a_realm():
     rr = RespectfulRequester()
 
     rr.register_realm("TEST123", max_requests=100, timespan=300)
+
+    request_func = lambda: requests.get("http://google.com")
+    rr._perform_request(request_func, "TEST123")
+
     rr.unregister_realm("TEST123")
 
     assert rr.redis.get(rr._realm_redis_key("TEST123")) is None
     assert not rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST123")
+    assert not len(rr.redis.keys("%s:REQUESTS:%s:*" % (rr.redis_prefix, "TEST123")))
 
 
 def test_the_instance_should_ignore_invalid_realms_when_attempting_to_unregister():
@@ -214,11 +223,10 @@ def test_the_instance_should_validate_that_the_request_lambda_is_actually_a_requ
     rr = RespectfulRequester()
 
     with pytest.raises(RequestsRespectfulError):
-        request_func = lambda: 1 + 1
-        rr._validate_request_func(request_func)
+        rr._validate_request_func(lambda: 1 + 1)
 
-    request_func = lambda: requests.get("http://google.com")
-    rr._validate_request_func(request_func)
+    rr._validate_request_func(lambda: requests.get("http://google.com"))
+    rr._validate_request_func(lambda: getattr(requests, "get")("http://google.com"))
 
 
 def test_the_instance_should_be_able_to_determine_the_amount_of_requests_performed_in_a_timespan_for_a_registered_realm():
@@ -251,6 +259,15 @@ def test_the_instance_should_be_able_to_determine_if_it_can_perform_a_request_fo
     assert not rr._can_perform_request("TEST123")
 
     rr.unregister_realm("TEST123")
+
+
+def test_the_instance_should_not_allow_a_request_to_be_made_on_an_unregistered_realm():
+    rr = RespectfulRequester()
+
+    request_func = lambda: requests.get("http://google.com")
+
+    with pytest.raises(RequestsRespectfulError):
+        rr.request(request_func, "TEST123")
 
 
 def test_the_instance_should_perform_the_request_if_it_is_allowed_to_on_a_registered_realm():
@@ -291,6 +308,67 @@ def test_the_instance_should_be_able_to_wait_for_a_request_to_be_allowed_on_a_re
     rr.request(request_func, "TEST123", wait=True)
 
     rr.unregister_realm("TEST123")
+
+    RespectfulRequester.configure_default()
+
+
+def test_the_instance_should_recognize_the_requests_proxy_methods():
+    rr = RespectfulRequester()
+
+    getattr(rr, "delete")
+    getattr(rr, "get")
+    getattr(rr, "head")
+    getattr(rr, "options")
+    getattr(rr, "patch")
+    getattr(rr, "post")
+    getattr(rr, "put")
+
+    with pytest.raises(AttributeError):
+        getattr(rr, "foo")
+
+
+def test_the_instance_should_get_the_same_results_by_using_the_requests_proxy_as_when_using_the_request_method():
+    rr = RespectfulRequester()
+
+    rr.register_realm("TEST123", max_requests=100, timespan=300)
+
+    assert type(rr.get("http://google.com", realm="TEST123")) == requests.Response
+
+    rr.update_realm("TEST123", max_requests=0)
+
+    with pytest.raises(RequestsRespectfulRateLimitedError):
+        rr.get("http://google.com", realm="TEST123")
+
+    rr.unregister_realm("TEST123")
+
+
+def test_the_safety_threshold_configuration_value_should_have_the_expected_effect():
+    rr = RespectfulRequester()
+
+    rr.register_realm("TEST123", max_requests=11, timespan=300)
+
+    RespectfulRequester.configure(safety_threshold=10)
+
+    request_func = lambda: requests.get("http://google.com")
+
+    rr.request(request_func, "TEST123")
+
+    with pytest.raises(RequestsRespectfulRateLimitedError):
+        rr.request(request_func, "TEST123")
+
+    RespectfulRequester.configure_default()
+
+    rr.unregister_realm("TEST123")
+
+
+def test_the_requests_module_name_configuration_value_should_have_the_expected_effect():
+    rr = RespectfulRequester()
+
+    RespectfulRequester.configure(requests_module_name="r")
+
+    request_func = lambda: r.get("http://google.com")
+
+    rr._validate_request_func(request_func)
 
     RespectfulRequester.configure_default()
 
