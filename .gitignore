@@ -1,0 +1,8 @@
+.python-version
+.idea
+.cache
+
+__pycache__/
+*.py[cod]
+
+requests-respectful.config.yml
