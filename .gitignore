@@ -6,3 +6,6 @@ __pycache__/
 *.py[cod]
 
 requests-respectful.config.yml
+
+dist/
+requests_respectful.egg-info/
