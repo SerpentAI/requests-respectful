@@ -147,9 +147,12 @@ class RespectfulRequester:
             self.redis.scan(
                 cursor=0,
                 match="%s:REQUEST:%s:*" % (self.redis_prefix, realm),
-                count=self.realm_max_requests(realm) + 100
+                count=self._redis_keys_in_db() + 100
             )[1]
         )
+
+    def _redis_keys_in_db(self):
+        return self.redis.info().get("db%d" % config["redis"]["database"]).get("keys")
 
     def _can_perform_request(self, realm):
         return self._requests_in_timespan(realm) < (self.realm_max_requests(realm) - config["safety_threshold"])
