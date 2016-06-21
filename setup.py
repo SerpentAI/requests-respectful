@@ -19,7 +19,7 @@ requires = [
 
 setup(
     name='requests-respectful',
-    version="0.1.1",
+    version="0.1.2",
     description='Minimalist wrapper on top of Requests to work within rate limits of any amount of services simultaneously. Parallel processing friendly.',
     long_description=long_description,
     author="Nicholas Brochu",
