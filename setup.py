@@ -7,24 +7,22 @@ try:
 except(IOError, ImportError):
     long_description = ""
 
-import requests_respectful
-
 packages = [
     'requests_respectful',
 ]
 
 requires = [
     'requests>=2.0.0',
-    'redis',
+    'redis>=2.10.3',
     'PyYaml',
 ]
 
 setup(
     name='requests-respectful',
-    version=requests_respectful.__version__,
+    version="0.1.1",
     description='Minimalist wrapper on top of Requests to work within rate limits of any amount of services simultaneously. Parallel processing friendly.',
     long_description=long_description,
-    author=requests_respectful.__author__,
+    author="Nicholas Brochu",
     author_email='info@nicholasbrochu.com',
     packages=packages,
     include_package_data=True,

@@ -10,7 +10,7 @@
 """
 
 __author__ = "Nicholas Brochu"
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .respectful_requester import RespectfulRequester
 from .exceptions import *
