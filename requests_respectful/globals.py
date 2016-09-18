@@ -3,6 +3,10 @@ from redis import StrictRedis, ConnectionError
 
 from .exceptions import RequestsRespectfulConfigError, RequestsRespectfulRedisError
 
+try:
+    FileNotFoundError
+except NameError:  # Py2 compatability
+    FileNotFoundError = IOError
 
 # CONFIG
 default_config = {
