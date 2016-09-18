@@ -2,7 +2,7 @@
 
 If you know Python, you know *[Requests](http://docs.python-requests.org/)*. *Requests* is love. *Requests* is life. Depending on your use cases, you may come across scenarios where you need to use *Requests* a lot. Services you consume may have rate-limiting policies in place or you may just happen to be in a good mood and feel like being a good Netizen. This is where *requests-respectful* can come in handy.
 
-***requests-respectul***:
+***requests-respectful***:
 
 * Is a minimalist wrapper on top of *Requests* to work within rate limits of any amount of services simultaneously
 * Can scale out of a single thread, single process or even a single machine
@@ -28,7 +28,7 @@ rr = RespectfulRequester()
 # This can be done elsewhere but the realm needs to be registered!
 rr.register_realm("Github", max_requests=100, timespan=60)
 
-response = rr.get("http://github.com", params={"foo": "bar"}, realm="Github", wait=True)
+response = rr.get("http://github.com", params={"foo": "bar"}, realms=["Github"], wait=True)
 ```
 
 **Conservative *requests-respectful* call** - pass a lambda with a *requests* method call
@@ -43,7 +43,7 @@ rr = RespectfulRequester()
 rr.register_realm("Github", max_requests=100, timespan=60)
 
 request_func = lambda: requests.get("http://github.com", params={"foo": "bar"})
-response = rr.request(request_func, realm="Github", wait=True)
+response = rr.request(request_func, realms=["Github"], wait=True)
 ```
 
 ## Requirements
@@ -150,11 +150,20 @@ This returns a list of currently registered realm names.
 rr.register_realm("Google", max_requests=10, timespan=1)
 rr.register_realm("Github", max_requests=100, timespan=60)
 rr.register_realm("Twitter", max_requests=150, timespan=300)
+
+# OR
+realm_tuples = [
+    ["Google", 10, 1],
+    ["Github", 100, 60],
+    ["Twitter", 150, 300]
+]
+
+rr.register_realms(realm_tuples)
 ```
 
-This register 3 realms:
+Either of these registers 3 realms:
 * *Google* at a maximum requesting rate of 10 requests per second
-* *Gihub* at a maximum requesting rate of 100 requests per minute
+* *Github* at a maximum requesting rate of 100 requests per minute
 * *Twitter* at a maximum requesting rate of 150 requests per 5 minutes
 
 #### Updating a Realm
@@ -185,6 +194,13 @@ rr.unregister_realm("Google")
 
 This would unregister the *Google* realm, preventing further queries from executing on it.
 
+#### Unregistering multiple Realms
+```python
+rr.unregister_realms(["Google", "Github", "Twitter"])
+```
+
+This would unregister all 3 realms in one operation, preventing further queries from executing on them.
+
 ### Requesting
 
 #### Using *Requests* HTTP verb methods
@@ -193,10 +209,10 @@ The library supports proxying calls to the 7 *Requests* HTTP verb methods (DELET
 
 These are all valid calls:
 ```python
-rr.get("http://httpbin.org", realm="HTTPBin")
-rr.post('http://httpbin.org/post', data = {'key':'value'}, realm="HTTPBin", wait=True)
-rr.put('http://httpbin.org/put', data = {'key':'value'}, realm="HTTPBin")
-rr.delete('http://httpbin.org/delete', realm="HTTPBin")
+rr.get("http://httpbin.org", realms=["HTTPBin"])
+rr.post('http://httpbin.org/post', data = {'key':'value'}, realms=["HTTPBin"], wait=True)
+rr.put('http://httpbin.org/put', data = {'key':'value'}, realms=["HTTPBin"])
+rr.delete('http://httpbin.org/delete', realms=["HTTPBin"])
 ```
 
 If not rate-limited, these would return your usual *requests.Response* object.
@@ -207,10 +223,20 @@ If you are a purist and prefer not using fancy proxying, you are also allowed to
 
 ```python
 request_func = lambda: requests.post('http://httpbin.org/post', data = {'key':'value'})
-rr.request(request_func, realm="HTTPBin", wait=True)
+rr.request(request_func, realms=["HTTPBin"], wait=True)
 ```
 
 If not rate-limited, this would return your usual *requests.Response* object.
+
+#### Multiple realms per request
+
+Starting in 0.2.0, you can have a single request count against multiple realms. The kwarg has been changed from `realm` to `realms` and works as you would expect it to.
+
+```python
+rr.get("http://httpbin.org", realms=["HTTPBin", "HTTPBinUser123", "HTTPBinServer3"])
+```
+
+The kwarg `realm` has been deprecated on requesting instance methods. It will still work with a warning until 0.3.0
 
 #### Handling exceptions
 
