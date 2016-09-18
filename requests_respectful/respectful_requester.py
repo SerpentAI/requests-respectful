@@ -7,6 +7,8 @@ import time
 
 import requests
 
+import warnings
+
 
 class RespectfulRequester:
 
@@ -23,20 +25,27 @@ class RespectfulRequester:
     def redis_prefix(self):
         return "RespectfulRequester"
 
-    def request(self, request_func, realm, wait=False):
-        if realm not in self.fetch_registered_realms():
-            raise RequestsRespectfulError("Realm '%s' hasn't been registered" % realm)
+    def request(self, request_func, realm=None, realms=None, wait=False):
+        if realm is not None:
+            warnings.warn("'realm' kwarg will be removed in favor of providing a 'realms' list starting in 0.3.0", DeprecationWarning)
+            realms = [realm]
+
+        registered_realms = self.fetch_registered_realms()
+
+        for r in realms:
+            if r not in registered_realms:
+                raise RequestsRespectfulError("Realm '%s' hasn't been registered" % realm)
 
         if wait:
             while True:
                 try:
-                    return self._perform_request(request_func, realm)
+                    return self._perform_request(request_func, realms=realms)
                 except RequestsRespectfulRateLimitedError:
                     pass
 
                 time.sleep(1)
         else:
-            return self._perform_request(request_func, realm)
+            return self._perform_request(request_func, realms=realms)
 
     def fetch_registered_realms(self):
         return list(map(lambda k: k.decode("utf-8"), self.redis.smembers("%s:REALMS" % self.redis_prefix)))
@@ -47,6 +56,12 @@ class RespectfulRequester:
         if not self.redis.hexists(redis_key, "max_requests"):
             self.redis.hmset(redis_key, {"max_requests": max_requests, "timespan": timespan})
             self.redis.sadd("%s:REALMS" % self.redis_prefix, realm)
+
+        return True
+
+    def register_realms(self, realm_tuples):
+        for realm_tuple in realm_tuples:
+            self.register_realm(*realm_tuple)
 
         return True
 
@@ -66,6 +81,12 @@ class RespectfulRequester:
 
         request_keys = self.redis.keys("%s:REQUEST:%s:*" % (self.redis_prefix, realm))
         [self.redis.delete(k) for k in request_keys]
+
+        return True
+
+    def unregister_realms(self, realms):
+        for realm in realms:
+            self.unregister_realm(realm)
 
         return True
 
@@ -119,21 +140,28 @@ class RespectfulRequester:
 
         return config
 
-    def _perform_request(self, request_func, realm):
+    def _perform_request(self, request_func, realms=None):
         self._validate_request_func(request_func)
 
-        if self._can_perform_request(realm):
-            request_uuid = str(uuid.uuid4())
+        rate_limited_realms = list()
 
-            self.redis.setex(
-                name="%s:REQUEST:%s:%s" % (self.redis_prefix, realm, request_uuid),
-                time=self.realm_timespan(realm),
-                value=request_uuid
-            )
+        for realm in realms:
+            if not self._can_perform_request(realm):
+                rate_limited_realms.append(realm)
+
+        if not len(rate_limited_realms):
+            for realm in realms:
+                request_uuid = str(uuid.uuid4())
+
+                self.redis.setex(
+                    name="%s:REQUEST:%s:%s" % (self.redis_prefix, realm, request_uuid),
+                    time=self.realm_timespan(realm),
+                    value=request_uuid
+                )
 
             return request_func()
         else:
-            raise RequestsRespectfulRateLimitedError("Currently rate-limited on Realm: %s" % realm)
+            raise RequestsRespectfulRateLimitedError("Currently rate-limited on Realm(s): %s" % ", ".join(rate_limited_realms))
 
     def _realm_redis_key(self, realm):
         return "%s:REALMS:%s" % (self.redis_prefix, realm)
@@ -160,12 +188,18 @@ class RespectfulRequester:
     # Requests proxy
     def _requests_proxy(self, method, *args, **kwargs):
         realm = kwargs.pop("realm", None)
+        realms = kwargs.pop("realms", list())
+
+        if realm:
+            warnings.warn("'realm' kwarg will be removed in favor of providing a 'realms' list starting in 0.3.0", DeprecationWarning)
+            realms.append(realm)
+
+        if not len(realms):
+            raise RequestsRespectfulError("'realms' is a required kwarg")
+
         wait = kwargs.pop("wait", False)
 
-        if realm is None:
-            raise RequestsRespectfulError("'realm' is a required kwarg")
-
-        return self.request(lambda: getattr(requests, method)(*args, **kwargs), realm, wait=wait)
+        return self.request(lambda: getattr(requests, method)(*args, **kwargs), realms=realms, wait=wait)
 
     def _requests_proxy_delete(self, *args, **kwargs):
         return self._requests_proxy("delete", *args, **kwargs)
