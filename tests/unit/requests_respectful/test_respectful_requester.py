@@ -11,6 +11,7 @@ import requests as r
 
 
 # Tests
+
 def test_setup():
     rr = RespectfulRequester()
     rr.unregister_realm("TEST123")
@@ -118,6 +119,36 @@ def test_the_instance_should_be_able_to_register_a_realm():
     rr.unregister_realm("TEST123")
 
 
+def test_the_instance_should_be_able_to_register_multiple_realms():
+    rr = RespectfulRequester()
+
+    rr.register_realm("TEST123", max_requests=100, timespan=300)
+
+    realm_tuples = [
+        ["TEST123", 100, 300],
+        ["TEST234", 200, 600],
+        ["TEST345", 300, 900],
+    ]
+
+    rr.register_realms(realm_tuples)
+
+    assert rr.realm_max_requests("TEST123") == 100
+    assert rr.realm_timespan("TEST123") == 300
+    assert rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST123")
+
+    assert rr.realm_max_requests("TEST234") == 200
+    assert rr.realm_timespan("TEST234") == 600
+    assert rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST234")
+
+    assert rr.realm_max_requests("TEST345") == 300
+    assert rr.realm_timespan("TEST345") == 900
+    assert rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST345")
+
+    rr.unregister_realm("TEST123")
+    rr.unregister_realm("TEST234")
+    rr.unregister_realm("TEST345")
+
+
 def test_the_instance_should_not_overwrite_when_registering_a_realm():
     rr = RespectfulRequester()
 
@@ -170,13 +201,42 @@ def test_the_instance_should_be_able_to_unregister_a_realm():
     rr.register_realm("TEST123", max_requests=100, timespan=300)
 
     request_func = lambda: requests.get("http://google.com")
-    rr._perform_request(request_func, "TEST123")
+    rr._perform_request(request_func, realms=["TEST123"])
 
     rr.unregister_realm("TEST123")
 
     assert rr.redis.get(rr._realm_redis_key("TEST123")) is None
     assert not rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST123")
     assert not len(rr.redis.keys("%s:REQUESTS:%s:*" % (rr.redis_prefix, "TEST123")))
+
+
+def test_the_instance_should_be_able_to_unregister_multiple_realms():
+    rr = RespectfulRequester()
+
+    realm_tuples = [
+        ["TEST123", 100, 300],
+        ["TEST234", 200, 600],
+        ["TEST345", 300, 900],
+    ]
+
+    rr.register_realms(realm_tuples)
+
+    request_func = lambda: requests.get("http://google.com")
+    rr._perform_request(request_func, realms=["TEST123", "TEST234", "TEST345"])
+
+    rr.unregister_realms(["TEST123", "TEST234", "TEST345"])
+
+    assert rr.redis.get(rr._realm_redis_key("TEST123")) is None
+    assert not rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST123")
+    assert not len(rr.redis.keys("%s:REQUESTS:%s:*" % (rr.redis_prefix, "TEST123")))
+
+    assert rr.redis.get(rr._realm_redis_key("TEST234")) is None
+    assert not rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST234")
+    assert not len(rr.redis.keys("%s:REQUESTS:%s:*" % (rr.redis_prefix, "TEST234")))
+
+    assert rr.redis.get(rr._realm_redis_key("TEST345")) is None
+    assert not rr.redis.sismember("%s:REALMS" % rr.redis_prefix, "TEST345")
+    assert not len(rr.redis.keys("%s:REQUESTS:%s:*" % (rr.redis_prefix, "TEST345")))
 
 
 def test_the_instance_should_ignore_invalid_realms_when_attempting_to_unregister():
@@ -238,9 +298,9 @@ def test_the_instance_should_be_able_to_determine_the_amount_of_requests_perform
 
     request_func = lambda: requests.get("http://google.com")
 
-    rr._perform_request(request_func, "TEST123")
-    rr._perform_request(request_func, "TEST123")
-    rr._perform_request(request_func, "TEST123")
+    rr._perform_request(request_func, realms=["TEST123"])
+    rr._perform_request(request_func, realms=["TEST123"])
+    rr._perform_request(request_func, realms=["TEST123"])
 
     assert rr._requests_in_timespan("TEST123") == 3
 
@@ -267,7 +327,7 @@ def test_the_instance_should_not_allow_a_request_to_be_made_on_an_unregistered_r
     request_func = lambda: requests.get("http://google.com")
 
     with pytest.raises(RequestsRespectfulError):
-        rr.request(request_func, "TEST123")
+        rr.request(request_func, realms=["TEST123"])
 
 
 def test_the_instance_should_perform_the_request_if_it_is_allowed_to_on_a_registered_realm():
@@ -276,9 +336,22 @@ def test_the_instance_should_perform_the_request_if_it_is_allowed_to_on_a_regist
     rr.register_realm("TEST123", max_requests=1000, timespan=5)
 
     request_func = lambda: requests.get("http://google.com")
-    assert type(rr._perform_request(request_func, "TEST123")) == requests.Response
+    assert type(rr._perform_request(request_func, realms=["TEST123"])) == requests.Response
 
     rr.unregister_realm("TEST123")
+
+
+def test_the_instance_should_perform_the_request_if_it_is_allowed_to_on_multiple_registered_realms():
+    rr = RespectfulRequester()
+
+    rr.register_realm("TEST123", max_requests=1000, timespan=5)
+    rr.register_realm("TEST234", max_requests=1000, timespan=5)
+
+    request_func = lambda: requests.get("http://google.com")
+    assert type(rr._perform_request(request_func, realms=["TEST123", "TEST234"])) == requests.Response
+
+    rr.unregister_realm("TEST123")
+    rr.unregister_realm("TEST234")
 
 
 def test_the_instance_should_return_a_rate_limit_exception_if_the_request_is_not_allowed_on_a_registered_realm():
@@ -289,9 +362,35 @@ def test_the_instance_should_return_a_rate_limit_exception_if_the_request_is_not
     request_func = lambda: requests.get("http://google.com")
 
     with pytest.raises(RequestsRespectfulRateLimitedError):
-        rr._perform_request(request_func, "TEST123")
+        rr._perform_request(request_func, realms=["TEST123"])
 
     rr.unregister_realm("TEST123")
+
+
+def test_the_instance_should_return_a_rate_limit_exception_if_the_request_is_not_allowed_on_one_or_multiple_registered_realms():
+    rr = RespectfulRequester()
+
+    rr.register_realm("TEST123", max_requests=0, timespan=5)
+    rr.register_realm("TEST234", max_requests=0, timespan=5)
+
+    request_func = lambda: requests.get("http://google.com")
+
+    with pytest.raises(RequestsRespectfulRateLimitedError):
+        rr._perform_request(request_func, realms=["TEST123", "TEST234"])
+
+    rr.update_realm("TEST123", max_requests=10)
+
+    with pytest.raises(RequestsRespectfulRateLimitedError):
+        rr._perform_request(request_func, realms=["TEST123", "TEST234"])
+
+    rr.update_realm("TEST123", max_requests=0)
+    rr.update_realm("TEST234", max_requests=10)
+
+    with pytest.raises(RequestsRespectfulRateLimitedError):
+        rr._perform_request(request_func, realms=["TEST123", "TEST234"])
+
+    rr.unregister_realm("TEST123")
+    rr.unregister_realm("TEST234")
 
 
 def test_the_instance_should_be_able_to_wait_for_a_request_to_be_allowed_on_a_registered_realm():
@@ -303,11 +402,31 @@ def test_the_instance_should_be_able_to_wait_for_a_request_to_be_allowed_on_a_re
 
     request_func = lambda: requests.get("http://google.com")
 
-    rr.request(request_func, "TEST123", wait=True)
-    rr.request(request_func, "TEST123", wait=True)
-    rr.request(request_func, "TEST123", wait=True)
+    rr.request(request_func, realms=["TEST123"], wait=True)
+    rr.request(request_func, realms=["TEST123"], wait=True)
+    rr.request(request_func, realms=["TEST123"], wait=True)
 
     rr.unregister_realm("TEST123")
+
+    RespectfulRequester.configure_default()
+
+
+def test_the_instance_should_be_able_to_wait_for_a_request_to_be_allowed_on_multiple_registered_realms():
+    rr = RespectfulRequester()
+
+    RespectfulRequester.configure(safety_threshold=0)
+
+    rr.register_realm("TEST123", max_requests=1, timespan=5)
+    rr.register_realm("TEST234", max_requests=1, timespan=2)
+
+    request_func = lambda: requests.get("http://google.com")
+
+    rr.request(request_func, realms=["TEST123", "TEST234"], wait=True)
+    rr.request(request_func, realms=["TEST123", "TEST234"], wait=True)
+    rr.request(request_func, realms=["TEST123", "TEST234"], wait=True)
+
+    rr.unregister_realm("TEST123")
+    rr.unregister_realm("TEST234")
 
     RespectfulRequester.configure_default()
 
@@ -351,10 +470,10 @@ def test_the_safety_threshold_configuration_value_should_have_the_expected_effec
 
     request_func = lambda: requests.get("http://google.com")
 
-    rr.request(request_func, "TEST123")
+    rr.request(request_func, realms=["TEST123"])
 
     with pytest.raises(RequestsRespectfulRateLimitedError):
-        rr.request(request_func, "TEST123")
+        rr.request(request_func, realms=["TEST123"])
 
     RespectfulRequester.configure_default()
 

@@ -1,12 +1,15 @@
 import yaml
+import copy
+
 from redis import StrictRedis, ConnectionError
 
-from .exceptions import RequestsRespectfulConfigError, RequestsRespectfulRedisError
+from .exceptions import RequestsRespectfulConfigError
 
 try:
     FileNotFoundError
-except NameError:  # Py2 compatability
+except NameError:  # Python 2 Compatibility
     FileNotFoundError = IOError
+
 
 # CONFIG
 default_config = {
@@ -57,7 +60,7 @@ try:
             )
         )
 except FileNotFoundError:
-    config = default_config
+    config = copy.deepcopy(default_config)
 
 
 # REDIS CLIENT
@@ -66,8 +69,3 @@ redis = StrictRedis(
     port=config["redis"]["port"],
     db=config["redis"]["database"]
 )
-
-try:
-    redis.echo("Testing Connection")
-except ConnectionError:
-    raise RequestsRespectfulRedisError("Could not establish a connection to the provided Redis server")
