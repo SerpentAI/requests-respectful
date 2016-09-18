@@ -1,5 +1,7 @@
 from .globals import default_config, config, redis
-from .exceptions import RequestsRespectfulError, RequestsRespectfulConfigError, RequestsRespectfulRateLimitedError
+from .exceptions import RequestsRespectfulError, RequestsRespectfulConfigError, RequestsRespectfulRateLimitedError, RequestsRespectfulRedisError
+
+from redis import StrictRedis, ConnectionError
 
 import uuid
 import inspect
@@ -12,6 +14,11 @@ class RespectfulRequester:
 
     def __init__(self):
         self.redis = redis
+
+        try:
+            self.redis.echo("Testing Connection")
+        except ConnectionError:
+            raise RequestsRespectfulRedisError("Could not establish a connection to the provided Redis server")
 
     def __getattr__(self, attr):
         if attr in ["delete", "get", "head", "options", "patch", "post", "put"]:
@@ -97,6 +104,13 @@ class RespectfulRequester:
                 ))
 
             config["redis"] = kwargs["redis"]
+
+            global redis
+            redis = StrictRedis(
+                host=config["redis"]["host"],
+                port=config["redis"]["port"],
+                db=config["redis"]["database"]
+            )
 
         if "safety_threshold" in kwargs:
             if type(kwargs["safety_threshold"]) != int or kwargs["safety_threshold"] < 0:
